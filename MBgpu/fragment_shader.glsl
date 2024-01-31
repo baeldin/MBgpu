@@ -6,7 +6,10 @@ uniform int max_iterations2 = 12;
 float bailout = 1000000.;
 uniform vec2 juliaSeed = vec2(0., 0.);
 out vec4 fragColor;
-int maxPasses = 128;
+int maxPasses = 16;
+const float phi1 = 1.618033988749894848204587; // golden ratio
+const float iphi1 = 1. / phi1;
+
 
 vec2 complexSquare(vec2 z) {
     return vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y);
@@ -65,12 +68,25 @@ float halton(int i, int b) {
     return r;
 }
 
+
 float tent(float x) {
     if (x == 0.5) { return 0.; }
     float orig = x * 2 - 1;
-    x = orig / sqrt(abs(orig));
+    x = orig / sqrt(abs(orig)) - sign(orig);
     return x;
 }
+
+// digit overkill incoming
+// const float phi2 = 1.324717957244746025960909;
+// const float iphi2 = 1. / phi2;
+
+float fibonacciX(const int k) {
+    return k * iphi1 - floor(k * iphi1);
+}
+
+float fibonacciY(const int k, const int nmax) {
+    return float(k) / float(nmax - 1);
+};
 
 float wrap1(float u, float v) { 
     return (u + v < 1) ? u + v : u + v - 1;
@@ -174,44 +190,60 @@ vec2 trignarl_base(vec2 z)
 }
 float trignarl(vec2 z, float x) {
     float dist = 0.;
-    for (int ii = 0; ii < 150; ii++)
+    vec2 z0 = z;
+    for (int ii = 0; ii < 30; ii++)
     {
         vec2 dz = trignarl_base(z) + trignarl_base(x * z);
         dist += length(dz);
         z += dz;
     }
-    return dist;
+    return pow(dist / length(z - z0), 2.);
 }
 
 float gnarl(vec2 z, float x) {
     float dist = 0.;
-    for (int ii = 0; ii < 100; ii++) 
+    vec2 z0 = z;
+    for (int ii = 0; ii < 50; ii++) 
     {
         vec2 dz = 0.1 * vec2(cos(2.*z.y) + cos(2. * x * z.y) + cos(3. * x * z.y), sin(2.*z.x) + sin(2. * x * z.x) + sin(3. * x * z.x));
         dist += length(dz);
         z += dz;
     }
-    return dist;
+    // return dist;
+    return length(z - z0);
 }
 
 void main() {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     int pixelIdx = int(gl_FragCoord.y * resolution.y + gl_FragCoord.x);
+    int mode = int(2 * gl_FragCoord.x / resolution.x);
     for (int ii = 0; ii < maxPasses; ii++)
     {
-        float xOffset = tent(wrap1(float(ii) / float(maxPasses), tofloat(lowbias32(uint(2 * pixelIdx    )))));
-        float yOffset = tent(wrap1(halton(ii, 2),                tofloat(lowbias32(uint(2 * pixelIdx + 1)))));
+        float xOffset = 0;
+        float yOffset = 0;
+        if (ii < 8) {
+        //if (mode == 0) {
+            xOffset = tent(wrap1(float(ii) / float(maxPasses), tofloat(lowbias32(uint(2 * pixelIdx)))));
+            yOffset = tent(wrap1(halton(ii, 2), tofloat(lowbias32(uint(2 * pixelIdx + 1)))));
+        }
+        else
+        {
+            xOffset = tent(wrap1(fibonacciX(ii - 8),            tofloat(lowbias32(uint(2 * pixelIdx)))));
+            yOffset = tent(wrap1(fibonacciY(ii - 8, maxPasses - 8), tofloat(lowbias32(uint(2 * pixelIdx + 1)))));
+        }
         vec2 uv = (gl_FragCoord.xy + vec2(xOffset, yOffset)) / resolution;
-        vec2 c = (uv - 0.5) * 20.0;
+        vec2 c = (uv - 0.5) * 6.0;
         vec2 seedUV = juliaSeed / resolution;
         vec2 seed = (seedUV - 0.5) * 2.0;
         //int iterations2 = mandelbrot(c);
         //float index = julia(c, seed);
         //float index = gnarl(c, length(seed));
-        float index = trignarl(c, length(seed));
-        fragColor.x += 0.5 + 0.5 * sin(3*index);
-        fragColor.y += 0.5 + 0.5 * sin(2*index);
-        fragColor.z += 0.5 + 0.5 * sin(4*index);
+        //float index = trignarl(c, length(seed));
+        float index = cos(pow(length(5*c*length(seed)), 2));
+        fragColor.x += 0.5 - 0.5 * sin(2*index);
+        fragColor.y += 0.5 - 0.5 * sin(2*index);
+        fragColor.z += 0.5 - 0.5 * sin(2*index);
+        
     }
     fragColor = linear2srgb(fragColor / float(maxPasses));
 }
